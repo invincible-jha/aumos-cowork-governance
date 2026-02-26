@@ -1,0 +1,110 @@
+# gdpr_basic.yaml
+# Basic GDPR-aligned governance policies for EU data subjects.
+# These policies address core Article 5 and Article 25 principles.
+# Engage a Data Protection Officer for full GDPR compliance review.
+
+policies:
+  - name: gdpr-block-personal-data-outside-eea
+    action: block
+    message: >
+      Transfer of EU personal data outside the EEA is blocked.
+      Use SCCs or adequacy decisions to enable cross-border transfers.
+    condition_logic: AND
+    conditions:
+      - field: content
+        operator: contains_pii
+        value: null
+      - field: destination_region
+        operator: not_in_list
+        value:
+          - EU
+          - EEA
+          - AT
+          - BE
+          - BG
+          - CY
+          - CZ
+          - DE
+          - DK
+          - EE
+          - ES
+          - FI
+          - FR
+          - GR
+          - HR
+          - HU
+          - IE
+          - IT
+          - LT
+          - LU
+          - LV
+          - MT
+          - NL
+          - PL
+          - PT
+          - RO
+          - SE
+          - SI
+          - SK
+    notify:
+      - dpo
+
+  - name: gdpr-require-approval-personal-data-export
+    action: approve
+    message: "Export of personal data requires Data Protection Officer approval."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: in_list
+        value: [data_export, file_write]
+      - field: content
+        operator: contains_pii
+        value: null
+    notify:
+      - dpo
+
+  - name: gdpr-block-excessive-data-collection
+    action: block
+    message: "Data collection exceeds the stated processing purpose (data minimisation)."
+    condition_logic: AND
+    conditions:
+      - field: data_fields_count
+        operator: greater_than
+        value: 20
+
+  - name: gdpr-warn-retention-period
+    action: warn
+    message: "Data retention period not specified. Define retention before storing personal data."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: file_write
+      - field: retention_days
+        operator: is_null
+        value: null
+      - field: content
+        operator: contains_pii
+        value: null
+    notify:
+      - dpo
+
+  - name: gdpr-log-all-personal-data-access
+    action: log
+    message: "Personal data access recorded for GDPR Article 30 Records of Processing."
+    condition_logic: AND
+    conditions:
+      - field: content
+        operator: contains_pii
+        value: null
+
+settings:
+  lawful_basis_required: true
+  data_subject_rights:
+    - right_of_access
+    - right_to_rectification
+    - right_to_erasure
+    - right_to_portability
+    - right_to_object
+  default_retention_days: 365
+  dpa_notification_hours: 72

@@ -1,0 +1,76 @@
+# file_access_control.yaml
+# Controls which file paths the agent is allowed to read, write, or delete.
+# Adjust allowed_paths and blocked_paths to match your environment.
+
+policies:
+  - name: block-system-paths
+    action: block
+    message: "Access to system paths is not permitted."
+    condition_logic: OR
+    conditions:
+      - field: path
+        operator: starts_with
+        value: /etc
+      - field: path
+        operator: starts_with
+        value: /proc
+      - field: path
+        operator: starts_with
+        value: /sys
+      - field: path
+        operator: starts_with
+        value: /boot
+      - field: path
+        operator: starts_with
+        value: "C:\\Windows"
+      - field: path
+        operator: starts_with
+        value: "C:\\System32"
+    notify:
+      - security-team
+
+  - name: block-credentials-files
+    action: block
+    message: "Reading credential files is not permitted."
+    condition_logic: OR
+    conditions:
+      - field: path
+        operator: matches
+        value: "(?i)(\\.env|\\.pem|\\.key|\\.p12|\\.pfx|credentials|secrets|id_rsa|id_ed25519)"
+    notify:
+      - security-team
+
+  - name: warn-home-directory-write
+    action: warn
+    message: "Writing to home directory. Verify this is intentional."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: file_write
+      - field: path
+        operator: matches
+        value: "^/home/|^/Users/"
+
+  - name: require-approval-delete
+    action: approve
+    message: "File deletion requires human approval."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: file_delete
+    notify:
+      - ops-team
+
+  - name: log-all-file-access
+    action: log
+    message: "File access recorded."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: in_list
+        value: [file_read, file_write, file_delete, file_list]
+
+settings:
+  max_file_size_mb: 50

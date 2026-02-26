@@ -1,0 +1,60 @@
+# cost_limits.yaml
+# Enforces API cost budgets.  Values are in USD.
+# Adjust thresholds to match your organisation's spending limits.
+
+policies:
+  - name: block-over-daily-budget
+    action: block
+    message: "Daily API cost budget exceeded. No further API calls permitted today."
+    condition_logic: AND
+    conditions:
+      - field: daily_cost_usd
+        operator: greater_than_or_equal
+        value: 50.0
+    notify:
+      - finance-team
+      - engineering-lead
+
+  - name: warn-approaching-daily-budget
+    action: warn
+    message: "Daily API spend is at 80% of budget. Review usage."
+    condition_logic: AND
+    conditions:
+      - field: daily_cost_usd
+        operator: greater_than_or_equal
+        value: 40.0
+    notify:
+      - engineering-lead
+
+  - name: block-single-call-cost
+    action: block
+    message: "Single API call cost exceeds per-call limit."
+    condition_logic: AND
+    conditions:
+      - field: estimated_cost_usd
+        operator: greater_than
+        value: 1.0
+
+  - name: warn-large-token-count
+    action: warn
+    message: "Request token count is unusually high."
+    condition_logic: AND
+    conditions:
+      - field: total_tokens
+        operator: greater_than
+        value: 100000
+
+  - name: log-all-api-costs
+    action: log
+    message: "API cost recorded."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: api_call
+
+settings:
+  daily_budget_usd: 50.0
+  weekly_budget_usd: 200.0
+  monthly_budget_usd: 500.0
+  alert_thresholds_pct: [50, 80, 100]

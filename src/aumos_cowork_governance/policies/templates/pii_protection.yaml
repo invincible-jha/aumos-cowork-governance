@@ -1,0 +1,44 @@
+# pii_protection.yaml
+# Blocks or warns when agent outputs or file contents contain personally
+# identifiable information.  Apply to all output-producing actions.
+
+policies:
+  - name: block-pii-in-output
+    action: block
+    message: "Output contains PII. Redact before returning to caller."
+    condition_logic: AND
+    conditions:
+      - field: content
+        operator: contains_pii
+        value: null
+    notify:
+      - privacy-officer
+
+  - name: warn-pii-in-file-write
+    action: warn
+    message: "File write contains PII. Ensure data is handled per data retention policy."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: file_write
+      - field: content
+        operator: contains_pii
+        value: null
+    notify:
+      - data-steward
+
+  - name: log-pii-scan
+    action: log
+    message: "PII scan completed on agent output."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: in_list
+        value: [file_read, file_write, api_response]
+
+settings:
+  pii_jurisdictions:
+    - common
+    - us
+  redact_on_warn: false

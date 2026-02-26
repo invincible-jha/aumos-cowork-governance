@@ -1,0 +1,226 @@
+# manifest.yaml — Cowork Plugin Manifest
+# Declares capabilities, triggers, and configuration schema for the
+# aumos-cowork-governance plugin.
+
+plugin:
+  name: aumos-cowork-governance
+  version: "0.1.0"
+  description: >
+    Enterprise governance plugin for Anthropic Cowork multi-agent environments.
+    Provides policy enforcement, audit trails, PII detection, cost controls,
+    and human approval gates.
+  homepage: https://github.com/aumos-ai/aumos-cowork-governance
+  license: Apache-2.0
+  authors:
+    - name: AumOS Contributors
+
+# ---------------------------------------------------------------------------
+# Capabilities declared by this plugin
+# ---------------------------------------------------------------------------
+capabilities:
+  - id: policy_enforcement
+    description: Evaluate YAML-defined governance policies before and after agent actions.
+    version: "1.0"
+
+  - id: audit_trail
+    description: Append-only JSONL audit log with daily rotation and configurable retention.
+    version: "1.0"
+
+  - id: pii_detection
+    description: >
+      Regex-based PII detection across common, US, EU, and India jurisdiction
+      pattern sets. Supports redaction.
+    version: "1.0"
+
+  - id: cost_tracking
+    description: >
+      Per-call token usage tracking, daily/weekly/monthly budget enforcement,
+      and threshold alerting via webhook or callback.
+    version: "1.0"
+
+  - id: human_approval
+    description: >
+      Synchronous approval gate that pauses agent execution for human review.
+      Supports Slack/Teams webhook notifications and configurable timeouts.
+    version: "1.0"
+
+  - id: compliance_checklists
+    description: >
+      Pre-built compliance checklists and YAML policy templates for SOC 2,
+      GDPR, and HIPAA.
+    version: "1.0"
+
+  - id: dashboard
+    description: >
+      Local browser-based governance dashboard with REST JSON API endpoints.
+      No external web framework dependency.
+    version: "1.0"
+
+# ---------------------------------------------------------------------------
+# Agent lifecycle triggers (hooks the plugin subscribes to)
+# ---------------------------------------------------------------------------
+triggers:
+  - event: pre_file_access
+    handler: aumos_cowork_governance.plugin.hooks:CoworkHooks.pre_file_access
+    description: Evaluate policies before any file read.
+
+  - event: post_file_access
+    handler: aumos_cowork_governance.plugin.hooks:CoworkHooks.post_file_access
+    description: Log and record file access after completion.
+
+  - event: pre_file_write
+    handler: aumos_cowork_governance.plugin.hooks:CoworkHooks.pre_file_write
+    description: Evaluate policies before any file write.
+
+  - event: post_file_write
+    handler: aumos_cowork_governance.plugin.hooks:CoworkHooks.post_file_write
+    description: Log file write completion.
+
+  - event: pre_api_call
+    handler: aumos_cowork_governance.plugin.hooks:CoworkHooks.pre_api_call
+    description: Evaluate policies and cost budget before any external API call.
+
+  - event: post_api_call
+    handler: aumos_cowork_governance.plugin.hooks:CoworkHooks.post_api_call
+    description: Record API call cost and check budget alerts after completion.
+
+# ---------------------------------------------------------------------------
+# Configuration schema (used by governance.yaml)
+# ---------------------------------------------------------------------------
+config_schema:
+  type: object
+  properties:
+    version:
+      type: string
+      description: Configuration schema version.
+      default: "1"
+
+    preset:
+      type: string
+      enum: [startup, enterprise, healthcare, finance]
+      description: Named policy pack preset.
+
+    policy_files:
+      type: array
+      items:
+        type: string
+      description: Paths to additional YAML policy files to load.
+
+    policies:
+      type: array
+      description: Inline policy definitions.
+
+    audit:
+      type: object
+      properties:
+        log_path:
+          type: string
+          default: "./governance_audit.jsonl"
+        rotation_enabled:
+          type: boolean
+          default: true
+        retention_days:
+          type: integer
+          minimum: 1
+          default: 90
+
+    cost:
+      type: object
+      properties:
+        daily_budget_usd:
+          type: number
+          minimum: 0
+        weekly_budget_usd:
+          type: number
+          minimum: 0
+        monthly_budget_usd:
+          type: number
+          minimum: 0
+        alert_thresholds_pct:
+          type: array
+          items:
+            type: number
+          default: [50, 80, 100]
+        webhook_url:
+          type: string
+
+    pii:
+      type: object
+      properties:
+        jurisdictions:
+          type: array
+          items:
+            type: string
+            enum: [common, us, eu, india]
+          default: [common, us]
+        redact_on_warn:
+          type: boolean
+          default: false
+
+    approval:
+      type: object
+      properties:
+        timeout_seconds:
+          type: number
+          minimum: 1
+          default: 300
+        webhook_url:
+          type: string
+        webhook_format:
+          type: string
+          enum: [slack, teams, generic]
+          default: generic
+
+    dashboard:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: false
+        host:
+          type: string
+          default: "127.0.0.1"
+        port:
+          type: integer
+          minimum: 1024
+          maximum: 65535
+          default: 8080
+
+# ---------------------------------------------------------------------------
+# Pre-built policy template packs
+# ---------------------------------------------------------------------------
+policy_templates:
+  - name: pii_protection
+    path: src/aumos_cowork_governance/policies/templates/pii_protection.yaml
+    description: Blocks and warns on PII in agent outputs.
+
+  - name: file_access_control
+    path: src/aumos_cowork_governance/policies/templates/file_access_control.yaml
+    description: Restricts agent file system access.
+
+  - name: cost_limits
+    path: src/aumos_cowork_governance/policies/templates/cost_limits.yaml
+    description: Enforces daily/monthly API cost budgets.
+
+  - name: data_classification
+    path: src/aumos_cowork_governance/policies/templates/data_classification.yaml
+    description: Routes actions based on file sensitivity classification.
+
+  - name: hipaa_basic
+    path: src/aumos_cowork_governance/policies/templates/hipaa_basic.yaml
+    description: Basic HIPAA-aligned PHI handling policies.
+
+  - name: gdpr_basic
+    path: src/aumos_cowork_governance/policies/templates/gdpr_basic.yaml
+    description: Basic GDPR-aligned personal data handling policies.
+
+  - name: soc2_basic
+    path: src/aumos_cowork_governance/policies/templates/soc2_basic.yaml
+    description: Basic SOC 2 Type II trust service criteria policies.
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+cli:
+  entry_point: aumos_cowork_governance.cli.main:cli
+  command_prefix: cowork-gov

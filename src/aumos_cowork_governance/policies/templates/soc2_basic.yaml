@@ -1,0 +1,103 @@
+# soc2_basic.yaml
+# Basic SOC 2 Type II-aligned governance policies.
+# Addresses Trust Services Criteria: Security (CC), Availability (A),
+# Confidentiality (C), and Change Management (CC8).
+
+policies:
+  - name: soc2-block-unauthenticated-api-call
+    action: block
+    message: "API calls require authentication. Missing auth token."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: api_call
+      - field: auth_token
+        operator: is_null
+        value: null
+    notify:
+      - security-team
+
+  - name: soc2-require-approval-production-change
+    action: approve
+    message: "Changes to production systems require change management approval (CC8.1)."
+    condition_logic: AND
+    conditions:
+      - field: environment
+        operator: equals
+        value: production
+      - field: action
+        operator: in_list
+        value: [file_write, file_delete, config_change, deploy]
+    notify:
+      - change-advisory-board
+
+  - name: soc2-block-non-production-access-to-prod-data
+    action: block
+    message: "Non-production agents must not access production data stores."
+    condition_logic: AND
+    conditions:
+      - field: agent_environment
+        operator: not_equals
+        value: production
+      - field: data_environment
+        operator: equals
+        value: production
+    notify:
+      - security-team
+
+  - name: soc2-warn-availability-degraded
+    action: warn
+    message: "Response time exceeds SLA threshold. Availability may be impacted."
+    condition_logic: AND
+    conditions:
+      - field: response_time_ms
+        operator: greater_than
+        value: 5000
+
+  - name: soc2-block-sensitive-data-in-logs
+    action: block
+    message: >
+      Confidential data detected in audit log write. This violates the
+      confidentiality trust service criterion.
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: log_write
+      - field: sensitivity
+        operator: in_list
+        value: [CONFIDENTIAL, RESTRICTED]
+    notify:
+      - security-team
+
+  - name: soc2-log-all-privileged-actions
+    action: log
+    message: "Privileged action recorded for SOC 2 audit evidence."
+    condition_logic: AND
+    conditions:
+      - field: privileged
+        operator: equals
+        value: true
+
+  - name: soc2-require-approval-bulk-delete
+    action: approve
+    message: "Bulk data deletion requires management approval."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: bulk_delete
+    notify:
+      - data-owner
+      - security-team
+
+settings:
+  mfa_required: true
+  session_timeout_minutes: 60
+  log_retention_days: 365
+  encrypt_data_in_transit: true
+  encrypt_data_at_rest: true
+  change_management_required_envs:
+    - production
+    - staging

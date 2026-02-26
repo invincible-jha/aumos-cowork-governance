@@ -1,0 +1,82 @@
+# hipaa_basic.yaml
+# Basic HIPAA-aligned governance policies for healthcare deployments.
+# These policies address minimum safeguards — engage a compliance attorney
+# for full HIPAA compliance review.
+
+policies:
+  - name: hipaa-block-phi-external-transmission
+    action: block
+    message: >
+      Protected Health Information (PHI) must not be transmitted to
+      external systems without a BAA in place.
+    condition_logic: AND
+    conditions:
+      - field: content
+        operator: contains_pii
+        value: null
+      - field: destination_type
+        operator: equals
+        value: external
+    notify:
+      - hipaa-privacy-officer
+      - security-team
+
+  - name: hipaa-require-approval-phi-file-write
+    action: approve
+    message: "Writing PHI to disk requires explicit human approval."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: file_write
+      - field: content
+        operator: contains_pii
+        value: null
+    notify:
+      - hipaa-privacy-officer
+
+  - name: hipaa-warn-phi-in-logs
+    action: warn
+    message: "Potential PHI detected in log output. Ensure audit log is encrypted at rest."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: log_write
+      - field: content
+        operator: contains_pii
+        value: null
+    notify:
+      - hipaa-privacy-officer
+
+  - name: hipaa-block-unencrypted-phi-storage
+    action: block
+    message: "PHI storage path is not in an approved encrypted volume."
+    condition_logic: AND
+    conditions:
+      - field: action
+        operator: equals
+        value: file_write
+      - field: encrypted_volume
+        operator: equals
+        value: false
+      - field: sensitivity
+        operator: equals
+        value: RESTRICTED
+    notify:
+      - hipaa-privacy-officer
+
+  - name: hipaa-log-all-phi-access
+    action: log
+    message: "PHI access event recorded for HIPAA audit trail."
+    condition_logic: AND
+    conditions:
+      - field: sensitivity
+        operator: equals
+        value: RESTRICTED
+
+settings:
+  phi_retention_days: 2555
+  require_encryption: true
+  audit_log_encryption: true
+  minimum_access_controls: true

@@ -1,0 +1,68 @@
+# data_classification.yaml
+# Routes actions based on the sensitivity level of files or content.
+# Sensitivity levels: PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED
+
+policies:
+  - name: block-restricted-external-send
+    action: block
+    message: "RESTRICTED data must not be sent to external endpoints."
+    condition_logic: AND
+    conditions:
+      - field: sensitivity
+        operator: equals
+        value: RESTRICTED
+      - field: destination_type
+        operator: equals
+        value: external
+    notify:
+      - ciso
+
+  - name: require-approval-confidential-external
+    action: approve
+    message: "Sending CONFIDENTIAL data to external destination requires approval."
+    condition_logic: AND
+    conditions:
+      - field: sensitivity
+        operator: equals
+        value: CONFIDENTIAL
+      - field: destination_type
+        operator: equals
+        value: external
+    notify:
+      - data-owner
+
+  - name: warn-internal-data-write
+    action: warn
+    message: "Writing INTERNAL data. Ensure destination is authorised."
+    condition_logic: AND
+    conditions:
+      - field: sensitivity
+        operator: in_list
+        value: [INTERNAL, CONFIDENTIAL]
+      - field: action
+        operator: equals
+        value: file_write
+
+  - name: log-all-classified-access
+    action: log
+    message: "Classified data access recorded."
+    condition_logic: AND
+    conditions:
+      - field: sensitivity
+        operator: not_in_list
+        value: [PUBLIC]
+
+settings:
+  default_sensitivity: INTERNAL
+  classification_keywords:
+    RESTRICTED:
+      - "top secret"
+      - "restricted"
+      - "eyes only"
+    CONFIDENTIAL:
+      - "confidential"
+      - "proprietary"
+      - "do not distribute"
+    INTERNAL:
+      - "internal"
+      - "not for public release"
