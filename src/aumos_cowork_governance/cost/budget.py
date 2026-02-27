@@ -16,7 +16,7 @@ True
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 
 from aumos_cowork_governance.cost.tracker import CostTracker
@@ -116,7 +116,7 @@ class BudgetManager:
         BudgetStatus
             Current budget status across all periods.
         """
-        today = reference_date or date.today()
+        today = reference_date or datetime.now(tz=timezone.utc).date()
 
         daily_status = self._check_period(BudgetPeriod.DAILY, today, self._daily_usd)
         weekly_status = self._check_period(BudgetPeriod.WEEKLY, today, self._weekly_usd)
@@ -143,7 +143,7 @@ class BudgetManager:
 
     def daily_remaining_usd(self, reference_date: date | None = None) -> float | None:
         """Return remaining daily budget in USD, or ``None`` if not configured."""
-        today = reference_date or date.today()
+        today = reference_date or datetime.now(tz=timezone.utc).date()
         if self._daily_usd is None:
             return None
         spent = self._tracker.total_cost_usd(target_date=today)

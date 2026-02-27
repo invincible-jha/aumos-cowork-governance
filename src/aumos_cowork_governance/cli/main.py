@@ -625,6 +625,195 @@ def dashboard_command(port: int, host: str, config_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# constitution group
+# ---------------------------------------------------------------------------
+
+
+@cli.group(name="constitution")
+def constitution_group() -> None:
+    """Multi-agent constitution commands."""
+
+
+@constitution_group.command(name="validate")
+@click.option(
+    "--file",
+    "-f",
+    "constitution_file",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to a constitution YAML file.",
+)
+def constitution_validate_command(constitution_file: str) -> None:
+    """Validate a constitution YAML file for internal consistency."""
+    from aumos_cowork_governance.constitution.schema import Constitution
+
+    try:
+        raw_text = Path(constitution_file).read_text(encoding="utf-8")
+        constitution = Constitution.from_yaml(raw_text)
+    except Exception as exc:
+        err_console.print(f"[red]Parse error:[/red] {exc}")
+        sys.exit(1)
+
+    errors = constitution.validate_constitution()
+
+    if not errors:
+        console.print(
+            Panel(
+                f"[green]VALID[/green]  '{constitution.team_name}' v{constitution.version}\n"
+                f"  Roles: {len(constitution.roles)}  "
+                f"Constraints: {len(constitution.constraints)}  "
+                f"Escalation rules: {len(constitution.escalation_rules)}",
+                title="Constitution Validation",
+                border_style="green",
+            )
+        )
+    else:
+        console.print(
+            Panel(
+                f"[red]INVALID[/red]  '{constitution.team_name}' — {len(errors)} error(s)",
+                title="Constitution Validation",
+                border_style="red",
+            )
+        )
+        for error in errors:
+            console.print(f"  [red]•[/red] {error}")
+        sys.exit(1)
+
+
+@constitution_group.command(name="check")
+@click.option(
+    "--file",
+    "-f",
+    "constitution_file",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to a constitution YAML file.",
+)
+@click.option(
+    "--role",
+    "-r",
+    required=True,
+    help="Role name to check.",
+)
+@click.option(
+    "--action",
+    "-a",
+    "action_type",
+    required=True,
+    type=click.Choice(["tool_call", "budget_spend", "delegation", "data_access", "escalation"]),
+    help="Action type to check.",
+)
+@click.option(
+    "--detail",
+    "-d",
+    "detail_pairs",
+    multiple=True,
+    help="Detail key=value pairs (e.g. --detail tool_name=read_file).",
+)
+def constitution_check_command(
+    constitution_file: str,
+    role: str,
+    action_type: str,
+    detail_pairs: tuple[str, ...],
+) -> None:
+    """Check whether a role is permitted to perform an action under a constitution."""
+    from datetime import datetime, timezone
+
+    from aumos_cowork_governance.constitution.enforcer import (
+        ActionType,
+        AgentAction,
+        ConstitutionEnforcer,
+    )
+    from aumos_cowork_governance.constitution.schema import Constitution
+
+    try:
+        raw_text = Path(constitution_file).read_text(encoding="utf-8")
+        constitution = Constitution.from_yaml(raw_text)
+    except Exception as exc:
+        err_console.print(f"[red]Parse error:[/red] {exc}")
+        sys.exit(1)
+
+    details: dict[str, object] = {}
+    for pair in detail_pairs:
+        if "=" in pair:
+            key, _, value = pair.partition("=")
+            details[key.strip()] = value.strip()
+
+    try:
+        parsed_action_type = ActionType(action_type)
+    except ValueError:
+        err_console.print(f"[red]Unknown action type:[/red] {action_type}")
+        sys.exit(1)
+
+    action = AgentAction(
+        agent_id="cli-check",
+        role=role,
+        action_type=parsed_action_type,
+        details=details,
+        timestamp=datetime.now(tz=timezone.utc),
+    )
+
+    enforcer = ConstitutionEnforcer(constitution)
+    result = enforcer.evaluate(action)
+
+    status_str = "[green]ALLOWED[/green]" if result.allowed else "[red]DENIED[/red]"
+    console.print(Panel(status_str, title="Constitution Check", border_style="blue"))
+    console.print(f"  Role:   [cyan]{role}[/cyan]")
+    console.print(f"  Action: [cyan]{action_type}[/cyan]")
+
+    if result.violations:
+        console.print("\n  [red]Violations:[/red]")
+        for violation in result.violations:
+            console.print(f"    • {violation}")
+
+    if result.warnings:
+        console.print("\n  [yellow]Warnings:[/yellow]")
+        for warning in result.warnings:
+            console.print(f"    • {warning}")
+
+    if result.applied_constraints:
+        console.print(f"\n  Applied constraints: {', '.join(result.applied_constraints)}")
+
+    sys.exit(0 if result.allowed else 1)
+
+
+@constitution_group.command(name="init")
+@click.option(
+    "--team-name",
+    "-t",
+    "team_name",
+    required=True,
+    help="Name of the team for the starter constitution.",
+)
+@click.option(
+    "--output",
+    "-o",
+    "output_file",
+    required=True,
+    type=click.Path(),
+    help="Output YAML file path.",
+)
+def constitution_init_command(team_name: str, output_file: str) -> None:
+    """Generate a starter constitution YAML for a team."""
+    from aumos_cowork_governance.constitution.schema import Constitution
+
+    constitution = Constitution.starter(team_name)
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(constitution.to_yaml(), encoding="utf-8")
+
+    console.print(
+        Panel(
+            f"[green]Created[/green] starter constitution for team '{team_name}'\n"
+            f"  File:  [bold]{output_path}[/bold]\n"
+            f"  Roles: {', '.join(r.name for r in constitution.roles)}",
+            title="Constitution Init",
+            border_style="green",
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

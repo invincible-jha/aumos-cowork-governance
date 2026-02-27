@@ -19,7 +19,7 @@ import json
 import logging
 import urllib.request
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Callable
 
@@ -100,7 +100,7 @@ class AlertManager:
         list[str]
             List of alert messages sent in this call.
         """
-        today = reference_date or date.today()
+        today = reference_date or datetime.now(tz=timezone.utc).date()
         status = self._budget.check(reference_date=today)
         fired_messages: list[str] = []
 

@@ -143,10 +143,13 @@ class CostTracker:
         Parameters
         ----------
         target_date:
-            The calendar date to filter by.
+            The calendar date to filter by, interpreted as UTC.
         """
         with self._lock:
-            return [r for r in self._records if r.timestamp.date() == target_date]
+            return [
+                r for r in self._records
+                if r.timestamp.astimezone(timezone.utc).date() == target_date
+            ]
 
     def total_cost_usd(self, target_date: date | None = None) -> float:
         """Return total cost in USD, optionally filtered to a date.

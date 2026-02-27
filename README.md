@@ -52,9 +52,8 @@ import aumos_cowork_governance
 
 ## Enterprise Upgrade
 
-The open-source edition provides the core foundation. For production
-deployments requiring SLA-backed support, advanced integrations, and the full
-AgentGov platform, see [docs/UPGRADE_TO_AgentGov.md](docs/UPGRADE_TO_AgentGov.md).
+For production deployments requiring SLA-backed support and advanced
+integrations, contact the maintainers or see the commercial extensions documentation.
 
 ## Contributing
 

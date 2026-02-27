@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from aumos_cowork_governance.cost.tracker import CostTracker
 
@@ -185,7 +185,7 @@ class CostLimiter:
             )
 
         # 3. Per-day limit — today's accumulated cost + this action.
-        today = date.today()
+        today = datetime.now(tz=timezone.utc).date()
         daily_total = tracker.total_cost_usd(target_date=today)
         projected_daily = daily_total + estimated_cost
         if projected_daily > self._per_day_limit:

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from aumos_cowork_governance.cost.tracker import CostTracker, UsageRecord
 from aumos_cowork_governance.cost.budget import (
@@ -105,8 +105,8 @@ class TestCostTrackerRead:
         assert all(r.task_id == "t1" for r in results)
 
     def test_records_for_date(self, tracker: CostTracker) -> None:
-        today = date.today()
-        yesterday = date(today.year, today.month, max(1, today.day - 1))
+        today = datetime.now(tz=timezone.utc).date()
+        yesterday = today - timedelta(days=1)
         tracker.record(
             task_id="t1", model="m", input_tokens=10, output_tokens=5, cost_usd=0.01,
             timestamp=datetime(yesterday.year, yesterday.month, yesterday.day, tzinfo=timezone.utc)
@@ -122,7 +122,7 @@ class TestCostTrackerRead:
         assert tracker.total_cost_usd() == pytest.approx(0.03)
 
     def test_total_cost_usd_filtered_by_date(self, tracker: CostTracker) -> None:
-        today = date.today()
+        today = datetime.now(tz=timezone.utc).date()
         tracker.record(task_id="t1", model="m", input_tokens=10, output_tokens=5, cost_usd=0.05)
         cost = tracker.total_cost_usd(target_date=today)
         assert cost == pytest.approx(0.05)
@@ -133,7 +133,7 @@ class TestCostTrackerRead:
         assert tracker.total_tokens() == 450
 
     def test_total_tokens_for_date(self, tracker: CostTracker) -> None:
-        today = date.today()
+        today = datetime.now(tz=timezone.utc).date()
         tracker.record(task_id="t1", model="m", input_tokens=300, output_tokens=100, cost_usd=0.01)
         assert tracker.total_tokens(target_date=today) == 400
 
