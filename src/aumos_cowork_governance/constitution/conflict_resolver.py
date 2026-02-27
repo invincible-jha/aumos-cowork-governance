@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 from aumos_cowork_governance.constitution.enforcer import AgentAction, ActionType
 from aumos_cowork_governance.constitution.schema import ConflictStrategy, Constitution
@@ -77,7 +76,7 @@ class ConflictResolution:
     strategy_used: ConflictStrategy
     resolution: str
     winner: str | None
-    details: dict[str, Any]
+    details: dict[str, object]
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +247,7 @@ class ConflictResolver:
         winner_action = sorted_actions[0]
         loser_actions = sorted_actions[1:]
 
-        details: dict[str, Any] = {
+        details: dict[str, object] = {
             "role_priorities": {
                 action.agent_id: role_priority.get(action.role, len(self._constitution.roles))
                 for action in conflict.conflicting_actions
@@ -288,7 +287,7 @@ class ConflictResolver:
         sorted_actions = sorted(conflict.conflicting_actions, key=restrictiveness_key)
         winner_action = sorted_actions[0]
 
-        details: dict[str, Any] = {
+        details: dict[str, object] = {
             "restrictiveness_scores": {
                 action.agent_id: restrictiveness_key(action)
                 for action in conflict.conflicting_actions

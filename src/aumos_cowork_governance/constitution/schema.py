@@ -17,7 +17,6 @@ from __future__ import annotations
 import textwrap
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -127,7 +126,7 @@ class Constraint(BaseModel):
     name: str
     description: str
     constraint_type: str
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    parameters: dict[str, object] = Field(default_factory=dict)
     applies_to: list[str] = Field(default_factory=lambda: ["*"])
     severity: str = "error"
 
@@ -346,12 +345,12 @@ class Constitution(BaseModel):
     # Serialisation helpers
     # ------------------------------------------------------------------
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Serialise to a plain Python dict (JSON-compatible)."""
         return self.model_dump(mode="json")
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Constitution":
+    def from_dict(cls, data: dict[str, object]) -> "Constitution":
         """Deserialise from a plain Python dict."""
         return cls.model_validate(data)
 
@@ -367,7 +366,7 @@ class Constitution(BaseModel):
     @classmethod
     def from_yaml(cls, yaml_str: str) -> "Constitution":
         """Deserialise from a YAML string."""
-        data: dict[str, Any] = yaml.safe_load(yaml_str) or {}
+        data: dict[str, object] = yaml.safe_load(yaml_str) or {}
         return cls.from_dict(data)
 
     # ------------------------------------------------------------------
