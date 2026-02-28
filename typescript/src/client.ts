@@ -367,12 +367,3 @@ export function createCoworkGovernanceClient(
   };
 }
 
-/** Re-export types for convenience. */
-export type {
-  CompliancePolicy,
-  GovernanceConstitution,
-  GovernanceDashboard,
-  PendingApprovals,
-  PolicyEvaluationResult,
-  ValidateWorkflowRequest,
-};
