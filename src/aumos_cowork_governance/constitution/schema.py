@@ -27,6 +27,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # ---------------------------------------------------------------------------
 
 
+class VotingMethod(str, Enum):
+    """Voting algorithm used when the consensus conflict strategy is active."""
+
+    MAJORITY = "majority"
+    WEIGHTED = "weighted"
+    SUPERMAJORITY = "supermajority"
+
+
 class Permission(str, Enum):
     """Granular permissions that can be assigned to a role."""
 
@@ -45,6 +53,43 @@ class ConflictStrategy(str, Enum):
     CONSENSUS = "consensus"
     LEADER_DECIDES = "leader_decides"
     MOST_RESTRICTIVE = "most_restrictive"
+
+
+# ---------------------------------------------------------------------------
+# Voting configuration
+# ---------------------------------------------------------------------------
+
+
+class VotingConfig(BaseModel):
+    """Configuration for consensus voting mechanics.
+
+    Attributes
+    ----------
+    method:
+        The voting algorithm to apply.  Defaults to ``MAJORITY``.
+    quorum_fraction:
+        Minimum fraction of eligible voters that must participate for the
+        vote to be valid.  Range ``[0.0, 1.0]``.
+    supermajority_fraction:
+        The threshold fraction a candidate must reach to win under the
+        ``SUPERMAJORITY`` method.  Range ``[0.5, 1.0]``.
+    veto_roles:
+        Role names whose holders may cast a ``"veto"`` choice to block any
+        outcome regardless of other votes.
+    max_rounds:
+        Maximum deliberation rounds before the vote is considered
+        inconclusive.  Range ``[1, 10]``.
+    tie_breaking:
+        Strategy when two candidates are exactly equal: ``"random"``,
+        ``"status_quo"``, or ``"chair"``.
+    """
+
+    method: VotingMethod = VotingMethod.MAJORITY
+    quorum_fraction: float = Field(default=0.5, ge=0.0, le=1.0)
+    supermajority_fraction: float = Field(default=0.667, ge=0.5, le=1.0)
+    veto_roles: list[str] = Field(default_factory=list)
+    max_rounds: int = Field(default=3, ge=1, le=10)
+    tie_breaking: str = "random"  # "random" | "status_quo" | "chair"
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +274,7 @@ class Constitution(BaseModel):
     constraints: list[Constraint] = Field(default_factory=list)
     escalation_rules: list[EscalationRule] = Field(default_factory=list)
     conflict_strategy: ConflictStrategy = ConflictStrategy.PRIORITY_BASED
+    voting: VotingConfig | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
 

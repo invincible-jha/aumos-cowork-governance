@@ -1,8 +1,12 @@
 /**
  * HTTP client for the AumOS cowork-governance policy enforcement API.
  *
- * Uses the Fetch API (available natively in Node 18+, browsers, and Deno).
- * No external dependencies required.
+ * Delegates all HTTP transport to `@aumos/sdk-core` which provides
+ * automatic retry with exponential back-off, timeout management via
+ * `AbortSignal.timeout`, interceptor support, and a typed error hierarchy.
+ *
+ * The public-facing `ApiResult<T>` envelope is preserved for full
+ * backward compatibility with existing callers.
  *
  * @example
  * ```ts
@@ -20,8 +24,16 @@
  * ```
  */
 
+import {
+  createHttpClient,
+  HttpError,
+  NetworkError,
+  TimeoutError,
+  AumosError,
+  type HttpClient,
+} from "@aumos/sdk-core";
+
 import type {
-  ApiError,
   ApiResult,
   CompliancePolicy,
   GovernanceConstitution,
@@ -46,55 +58,51 @@ export interface CoworkGovernanceClientConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Internal adapter
 // ---------------------------------------------------------------------------
 
-async function fetchJson<T>(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number,
+async function callApi<T>(
+  operation: () => Promise<{ readonly data: T; readonly status: number }>,
 ): Promise<ApiResult<T>> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    const body = await response.json() as unknown;
-
-    if (!response.ok) {
-      const errorBody = body as Partial<ApiError>;
+    const response = await operation();
+    return { ok: true, data: response.data };
+  } catch (error: unknown) {
+    if (error instanceof HttpError) {
       return {
         ok: false,
-        error: {
-          error: errorBody.error ?? "Unknown error",
-          detail: errorBody.detail ?? "",
-        },
-        status: response.status,
+        error: { error: error.message, detail: String(error.body ?? "") },
+        status: error.statusCode,
       };
     }
-
-    return { ok: true, data: body as T };
-  } catch (err: unknown) {
-    clearTimeout(timeoutId);
-    const message = err instanceof Error ? err.message : String(err);
+    if (error instanceof TimeoutError) {
+      return {
+        ok: false,
+        error: { error: "Request timed out", detail: error.message },
+        status: 0,
+      };
+    }
+    if (error instanceof NetworkError) {
+      return {
+        ok: false,
+        error: { error: "Network error", detail: error.message },
+        status: 0,
+      };
+    }
+    if (error instanceof AumosError) {
+      return {
+        ok: false,
+        error: { error: error.code, detail: error.message },
+        status: error.statusCode ?? 0,
+      };
+    }
+    const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
-      error: { error: "Network error", detail: message },
+      error: { error: "Unexpected error", detail: message },
       status: 0,
     };
   }
-}
-
-function buildHeaders(
-  extraHeaders: Readonly<Record<string, string>> | undefined,
-): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    ...extraHeaders,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -105,9 +113,6 @@ function buildHeaders(
 export interface CoworkGovernanceClient {
   /**
    * Evaluate an action context against all loaded governance policies.
-   *
-   * The first BLOCK policy that matches terminates evaluation and sets
-   * allowed=false.  APPROVE policies set requires_approval=true without blocking.
    *
    * @param request - The action context to evaluate and optional agent scope.
    * @returns A PolicyEvaluationResult with allowed/blocked decision and per-policy results.
@@ -137,9 +142,6 @@ export interface CoworkGovernanceClient {
 
   /**
    * Validate an agent workflow action against all governance policies.
-   *
-   * Equivalent to checkPolicy but returns a richer validation object
-   * suitable for pre-execution workflow gates.
    *
    * @param request - The workflow action to validate.
    * @returns A PolicyEvaluationResult indicating whether the workflow may proceed.
@@ -220,150 +222,94 @@ export interface CoworkGovernanceClient {
 export function createCoworkGovernanceClient(
   config: CoworkGovernanceClientConfig,
 ): CoworkGovernanceClient {
-  const { baseUrl, timeoutMs = 30_000, headers: extraHeaders } = config;
-  const baseHeaders = buildHeaders(extraHeaders);
+  const http: HttpClient = createHttpClient({
+    baseUrl: config.baseUrl,
+    timeout: config.timeoutMs ?? 30_000,
+    defaultHeaders: config.headers,
+  });
 
   return {
-    async checkPolicy(
+    checkPolicy(
       request: ValidateWorkflowRequest,
     ): Promise<ApiResult<PolicyEvaluationResult>> {
-      return fetchJson<PolicyEvaluationResult>(
-        `${baseUrl}/policies/check`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify(request),
-        },
-        timeoutMs,
+      return callApi(() =>
+        http.post<PolicyEvaluationResult>("/policies/check", request),
       );
     },
 
-    async getViolations(options?: {
+    getViolations(options?: {
       readonly agentId?: string;
       readonly since?: string;
       readonly limit?: number;
     }): Promise<ApiResult<readonly PolicyEvaluationResult[]>> {
-      const params = new URLSearchParams();
-      if (options?.agentId !== undefined) {
-        params.set("agent_id", options.agentId);
-      }
-      if (options?.since !== undefined) {
-        params.set("since", options.since);
-      }
-      if (options?.limit !== undefined) {
-        params.set("limit", String(options.limit));
-      }
-      const queryString = params.toString();
-      const url = queryString
-        ? `${baseUrl}/violations?${queryString}`
-        : `${baseUrl}/violations`;
-      return fetchJson<readonly PolicyEvaluationResult[]>(
-        url,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
+      const queryParams: Record<string, string> = {};
+      if (options?.agentId !== undefined) queryParams["agent_id"] = options.agentId;
+      if (options?.since !== undefined) queryParams["since"] = options.since;
+      if (options?.limit !== undefined) queryParams["limit"] = String(options.limit);
+      return callApi(() =>
+        http.get<readonly PolicyEvaluationResult[]>("/violations", { queryParams }),
       );
     },
 
-    async getDashboard(): Promise<ApiResult<GovernanceDashboard>> {
-      return fetchJson<GovernanceDashboard>(
-        `${baseUrl}/dashboard`,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
-      );
+    getDashboard(): Promise<ApiResult<GovernanceDashboard>> {
+      return callApi(() => http.get<GovernanceDashboard>("/dashboard"));
     },
 
-    async validateWorkflow(
+    validateWorkflow(
       request: ValidateWorkflowRequest,
     ): Promise<ApiResult<PolicyEvaluationResult>> {
-      return fetchJson<PolicyEvaluationResult>(
-        `${baseUrl}/workflow/validate`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify(request),
-        },
-        timeoutMs,
+      return callApi(() =>
+        http.post<PolicyEvaluationResult>("/workflow/validate", request),
       );
     },
 
-    async getConstitution(
-      teamName?: string,
-    ): Promise<ApiResult<GovernanceConstitution>> {
-      const params = new URLSearchParams();
-      if (teamName !== undefined) {
-        params.set("team", teamName);
-      }
-      const queryString = params.toString();
-      const url = queryString
-        ? `${baseUrl}/constitution?${queryString}`
-        : `${baseUrl}/constitution`;
-      return fetchJson<GovernanceConstitution>(
-        url,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
+    getConstitution(teamName?: string): Promise<ApiResult<GovernanceConstitution>> {
+      const queryParams: Record<string, string> = {};
+      if (teamName !== undefined) queryParams["team"] = teamName;
+      return callApi(() =>
+        http.get<GovernanceConstitution>("/constitution", { queryParams }),
       );
     },
 
-    async setConstitution(
+    setConstitution(
       constitution: GovernanceConstitution,
     ): Promise<ApiResult<GovernanceConstitution>> {
-      return fetchJson<GovernanceConstitution>(
-        `${baseUrl}/constitution`,
-        {
-          method: "PUT",
-          headers: baseHeaders,
-          body: JSON.stringify(constitution),
-        },
-        timeoutMs,
+      return callApi(() =>
+        http.put<GovernanceConstitution>("/constitution", constitution),
       );
     },
 
-    async getPolicies(): Promise<ApiResult<readonly CompliancePolicy[]>> {
-      return fetchJson<readonly CompliancePolicy[]>(
-        `${baseUrl}/policies`,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
-      );
+    getPolicies(): Promise<ApiResult<readonly CompliancePolicy[]>> {
+      return callApi(() => http.get<readonly CompliancePolicy[]>("/policies"));
     },
 
-    async getPendingApprovals(): Promise<ApiResult<PendingApprovals>> {
-      return fetchJson<PendingApprovals>(
-        `${baseUrl}/approvals/pending`,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
-      );
+    getPendingApprovals(): Promise<ApiResult<PendingApprovals>> {
+      return callApi(() => http.get<PendingApprovals>("/approvals/pending"));
     },
 
-    async approveRequest(
+    approveRequest(
       requestId: string,
       approvedBy: string,
     ): Promise<ApiResult<Readonly<Record<string, never>>>> {
-      return fetchJson<Readonly<Record<string, never>>>(
-        `${baseUrl}/approvals/${encodeURIComponent(requestId)}/approve`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify({ approved_by: approvedBy }),
-        },
-        timeoutMs,
+      return callApi(() =>
+        http.post<Readonly<Record<string, never>>>(
+          `/approvals/${encodeURIComponent(requestId)}/approve`,
+          { approved_by: approvedBy },
+        ),
       );
     },
 
-    async rejectRequest(
+    rejectRequest(
       requestId: string,
       rejectedBy: string,
       reason?: string,
     ): Promise<ApiResult<Readonly<Record<string, never>>>> {
-      return fetchJson<Readonly<Record<string, never>>>(
-        `${baseUrl}/approvals/${encodeURIComponent(requestId)}/reject`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify({ rejected_by: rejectedBy, reason: reason ?? "" }),
-        },
-        timeoutMs,
+      return callApi(() =>
+        http.post<Readonly<Record<string, never>>>(
+          `/approvals/${encodeURIComponent(requestId)}/reject`,
+          { rejected_by: rejectedBy, reason: reason ?? "" },
+        ),
       );
     },
   };
 }
-

@@ -21,6 +21,14 @@ Part of the [AumOS](https://github.com/aumos-ai) open-source agent infrastructur
 - Policy template library with pre-built rule sets for common governance patterns (data residency, cost control, PII handling)
 - Governance dashboard server (`dashboard.api`) that exposes policy status, audit summaries, and budget utilization over HTTP
 
+## Current Limitations
+
+> **Transparency note**: We list known limitations to help you evaluate fit.
+
+- **Consensus**: Stub voting mechanism — no real quorum or weighted voting yet.
+- **Scale**: Single-process governance — no distributed policy enforcement.
+- **Templates**: Limited pre-built policy templates.
+
 ## Quick Start
 
 Install from PyPI:

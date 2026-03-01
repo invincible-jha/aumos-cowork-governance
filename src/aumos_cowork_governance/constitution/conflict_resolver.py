@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 
 from aumos_cowork_governance.constitution.enforcer import AgentAction, ActionType
 from aumos_cowork_governance.constitution.schema import ConflictStrategy, Constitution
+from aumos_cowork_governance.constitution.voting import Vote, VoteResult, get_mechanism
+from aumos_cowork_governance.constitution.deliberation import DeliberationEngine
 
 logger = logging.getLogger(__name__)
 
@@ -342,9 +344,155 @@ class ConflictResolver:
         )
 
     def _resolve_consensus(self, conflict: Conflict) -> ConflictResolution:
-        """Attempt consensus: if all agents propose the same action type, agree.
+        """Attempt consensus resolution.
 
-        When actions differ, falls back to ``PRIORITY_BASED``.
+        When the constitution has a ``VotingConfig`` attached, delegates to the
+        configured voting mechanism (majority / weighted / supermajority).  Each
+        conflicting agent casts one vote for their own proposed action type.
+
+        Without a ``VotingConfig`` the original heuristic applies: if all agents
+        share the same action type, the earliest agent proceeds; otherwise falls
+        back to priority-based resolution.
+        """
+        if self._constitution.voting is not None:
+            return self._resolve_consensus_by_voting(conflict)
+        return self._resolve_consensus_heuristic(conflict)
+
+    def _resolve_consensus_by_voting(self, conflict: Conflict) -> ConflictResolution:
+        """Resolve via the configured ``VotingConfig`` mechanism."""
+        voting_config = self._constitution.voting
+        assert voting_config is not None  # guarded by caller
+
+        mechanism = get_mechanism(voting_config)
+        engine = DeliberationEngine(mechanism)
+
+        # Each agent votes for the action_type their action represents.
+        options: list[str] = list(
+            dict.fromkeys(
+                action.action_type.value
+                for action in conflict.conflicting_actions
+            )
+        )
+
+        role_priority = self._role_priority_map()
+
+        def votes_per_round(
+            round_number: int, remaining_options: list[str]
+        ) -> list[Vote]:
+            votes: list[Vote] = []
+            for action in conflict.conflicting_actions:
+                choice = (
+                    action.action_type.value
+                    if action.action_type.value in remaining_options
+                    else remaining_options[0]
+                )
+                # Weight by inverse priority (higher priority = higher weight).
+                priority = role_priority.get(
+                    action.role, len(self._constitution.roles)
+                )
+                weight = 1.0 / (priority + 1)
+                votes.append(
+                    Vote(
+                        voter_id=action.agent_id,
+                        choice=choice,
+                        weight=weight,
+                        role=action.role,
+                        timestamp=action.timestamp,
+                    )
+                )
+            return votes
+
+        vote_result: VoteResult = engine.run(
+            votes_per_round, options, voting_config
+        )
+
+        if vote_result.vetoed:
+            # Veto — fall back to priority
+            fallback = self.resolve_by_priority(conflict)
+            return ConflictResolution(
+                conflict=conflict,
+                strategy_used=ConflictStrategy.CONSENSUS,
+                resolution=(
+                    f"Consensus vetoed by '{vote_result.vetoed_by}'. "
+                    f"Fell back to priority. Winner: '{fallback.winner}'."
+                ),
+                winner=fallback.winner,
+                details={
+                    "voting_method": voting_config.method.value,
+                    "vetoed_by": vote_result.vetoed_by,
+                    "fallback": "priority_based",
+                },
+            )
+
+        if not vote_result.quorum_met:
+            fallback = self.resolve_by_priority(conflict)
+            return ConflictResolution(
+                conflict=conflict,
+                strategy_used=ConflictStrategy.CONSENSUS,
+                resolution=(
+                    f"Quorum not met for consensus vote. "
+                    f"Fell back to priority. Winner: '{fallback.winner}'."
+                ),
+                winner=fallback.winner,
+                details={
+                    "voting_method": voting_config.method.value,
+                    "fallback": "priority_based",
+                    "quorum_fraction": voting_config.quorum_fraction,
+                },
+            )
+
+        if vote_result.winner is not None:
+            # Find the agent whose action matches the winning action type.
+            winning_agent: str | None = None
+            for action in conflict.conflicting_actions:
+                if action.action_type.value == vote_result.winner:
+                    winning_agent = action.agent_id
+                    break
+            # Fallback: if no exact match pick highest-priority agent.
+            if winning_agent is None:
+                fallback = self.resolve_by_priority(conflict)
+                winning_agent = fallback.winner
+
+            return ConflictResolution(
+                conflict=conflict,
+                strategy_used=ConflictStrategy.CONSENSUS,
+                resolution=(
+                    f"Consensus reached via {voting_config.method.value} vote "
+                    f"in {vote_result.rounds_needed} round(s). "
+                    f"Winning action type: '{vote_result.winner}'. "
+                    f"Agent '{winning_agent}' proceeds."
+                ),
+                winner=winning_agent,
+                details={
+                    "voting_method": voting_config.method.value,
+                    "vote_counts": vote_result.vote_counts,
+                    "rounds_needed": vote_result.rounds_needed,
+                    "consensus_action_type": vote_result.winner,
+                },
+            )
+
+        # No winner after all rounds — fall back to priority.
+        fallback = self.resolve_by_priority(conflict)
+        return ConflictResolution(
+            conflict=conflict,
+            strategy_used=ConflictStrategy.CONSENSUS,
+            resolution=(
+                f"No consensus after {vote_result.rounds_needed} round(s). "
+                f"Fell back to priority. Winner: '{fallback.winner}'."
+            ),
+            winner=fallback.winner,
+            details={
+                "voting_method": voting_config.method.value,
+                "vote_counts": vote_result.vote_counts,
+                "rounds_needed": vote_result.rounds_needed,
+                "fallback": "priority_based",
+            },
+        )
+
+    def _resolve_consensus_heuristic(self, conflict: Conflict) -> ConflictResolution:
+        """Original heuristic consensus: unanimous action type agreement.
+
+        Kept for backward compatibility when no ``VotingConfig`` is configured.
         """
         action_types = {action.action_type for action in conflict.conflicting_actions}
         if len(action_types) == 1:
@@ -375,7 +523,10 @@ class ConflictResolver:
             ),
             winner=fallback.winner,
             details={
-                "action_types_seen": [t.value for t in sorted(action_types, key=lambda x: x.value)],
+                "action_types_seen": [
+                    t.value
+                    for t in sorted(action_types, key=lambda x: x.value)
+                ],
                 "fallback": "priority_based",
             },
         )

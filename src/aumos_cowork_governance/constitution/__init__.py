@@ -11,6 +11,15 @@ Public API
 - ``EscalationRule`` — trigger-based escalation between roles
 - ``Permission`` — granular permission enum
 - ``ConflictStrategy`` — strategy for resolving agent disagreements
+- ``VotingMethod`` — voting algorithm enum (majority / weighted / supermajority)
+- ``VotingConfig`` — configuration for consensus voting mechanics
+- ``Vote`` — a single cast vote from one participant
+- ``VoteResult`` — outcome of tallying a collection of votes
+- ``MajorityVote`` — simple majority voting mechanism
+- ``WeightedVote`` — weight-based voting mechanism
+- ``SupermajorityVote`` — supermajority threshold voting mechanism
+- ``get_mechanism`` — factory for selecting the correct voting mechanism
+- ``DeliberationEngine`` — multi-round deliberation with elimination
 - ``ConstitutionEnforcer`` — checks agent actions against the constitution
 - ``ConflictResolver`` — detects and resolves conflicts between agents
 
@@ -32,7 +41,18 @@ from aumos_cowork_governance.constitution.schema import (
     EscalationRule,
     Permission,
     RoleDefinition,
+    VotingConfig,
+    VotingMethod,
 )
+from aumos_cowork_governance.constitution.voting import (
+    Vote,
+    VoteResult,
+    MajorityVote,
+    WeightedVote,
+    SupermajorityVote,
+    get_mechanism,
+)
+from aumos_cowork_governance.constitution.deliberation import DeliberationEngine
 from aumos_cowork_governance.constitution.enforcer import (
     ActionType,
     AgentAction,
@@ -53,6 +73,17 @@ __all__ = [
     "EscalationRule",
     "Permission",
     "RoleDefinition",
+    "VotingConfig",
+    "VotingMethod",
+    # Voting
+    "Vote",
+    "VoteResult",
+    "MajorityVote",
+    "WeightedVote",
+    "SupermajorityVote",
+    "get_mechanism",
+    # Deliberation
+    "DeliberationEngine",
     # Enforcer
     "ActionType",
     "AgentAction",
